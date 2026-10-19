@@ -24,7 +24,3 @@ If you would like to download the project to your computer for offline play:
    * `assets/` (the resources folder)
 4. Simply double-click **`index.html`** to open it in your web browser and start playing!
 
----
-
-## 🛠️
-* HTML5 / CSS3 / JavaScript
