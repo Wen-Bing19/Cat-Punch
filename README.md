@@ -10,6 +10,12 @@ Just cat punch!
 
 
 
+
+https://github.com/user-attachments/assets/ad4b1a34-f01e-461a-a404-164c0ea8363c
+
+
+
+
 ---
 
 🔗 **Play directly online (線上直接遊玩)**：[Click here to start the game now](https://wen-bing19.github.io/Cat-Punch/) 
