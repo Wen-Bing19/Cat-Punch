@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Cat Punch</title>
+<style>
+  :root {
+    --ratio: 259 / 300;      /* 載入圖片後會依實際尺寸自動更新 */
+    --warn-left: 10%;        /* 紅色驚嘆號位置(左貓頭上),不準就改這兩個 */
+    --warn-top: 42%;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; height: 100%; background: #eeeeee; overflow: hidden;
+    font-family: "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
+  }
+  body { display: flex; align-items: center; justify-content: center; }
+
+  #stage {
+    position: relative;
+    width: min(100vw, calc(100dvh * var(--ratio)));
+    aspect-ratio: var(--ratio);
+    background: #fff; overflow: hidden; cursor: pointer;
+    user-select: none; -webkit-user-select: none; touch-action: manipulation;
+  }
+  #world { position: absolute; inset: 0; }
+  #view { width: 100%; height: 100%; display: block; pointer-events: none; }
+
+  #score {
+    position: absolute; left: 5%; top: 1%;
+    font-size: clamp(48px, 17vw, 96px); font-weight: 200; line-height: 1;
+    color: rgba(90,90,90,.8); pointer-events: none;
+    text-shadow: 0 0 6px rgba(255,255,255,.7);
+  }
+  #hint {
+    position: absolute; left: 0; right: 0; bottom: 4%; text-align: center;
+    font-size: clamp(14px, 4.5vw, 20px); font-weight: 700; color: #fff;
+    text-shadow: 0 1px 4px rgba(0,0,0,.7); pointer-events: none; transition: opacity .4s;
+  }
+
+  #warn {
+    position: absolute; left: var(--warn-left); top: var(--warn-top);
+    font-size: clamp(48px, 17vw, 96px); font-weight: 900; line-height: 1;
+    color: #e11d1d; -webkit-text-stroke: 3px #fff; paint-order: stroke fill;
+    text-shadow: 0 3px 10px rgba(0,0,0,.45);
+    pointer-events: none; display: none;
+  }
+  #warn.on { display: block; animation: pop .25s ease-out, wob .12s linear .25s infinite; }
+  @keyframes pop { from { transform: scale(.2); } 60% { transform: scale(1.4); } to { transform: scale(1); } }
+  @keyframes wob { 0%,100% { transform: translateX(0); } 50% { transform: translateX(3px); } }
+
+  #over {
+    position: absolute; inset: 0; background: #000; color: #fff;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 12px; text-align: center; cursor: default;
+    opacity: 0; pointer-events: none; transition: opacity .5s; z-index: 10;
+  }
+  #over.on { opacity: 1; pointer-events: auto; }
+  #over h1 { margin: 0; font-size: clamp(40px, 13vw, 72px); letter-spacing: 2px; color: #e11d1d; }
+  #over p { margin: 0; font-size: clamp(16px, 5vw, 24px); color: #ddd; }
+  #over button {
+    margin-top: 12px; font-size: clamp(16px, 5vw, 22px); font-weight: 700;
+    padding: .6em 1.8em; border: 2px solid #fff; border-radius: 999px;
+    background: transparent; color: #fff; cursor: pointer;
+  }
+  #over button:hover { background: #fff; color: #000; }
+
+  #loading, #missing {
+    position: absolute; inset: 0; z-index: 20; background: #eee; color: #444;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    text-align: center; padding: 8%; line-height: 1.7; font-size: 15px; cursor: default;
+  }
+  #missing { display: none; background: #ddd; }
+  #missing b { color: #c0392b; }
+
+  /* 除錯模式:網址後面加 ?debug */
+  #debug {
+    display: none; position: fixed; inset: 0; z-index: 99; overflow: auto;
+    background: #222; color: #eee; padding: 12px; font-size: 13px;
+  }
+  #debug .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 8px; margin-top: 10px; }
+  #debug figure { margin: 0; border: 3px solid #666; background: #000; }
+  #debug img { width: 100%; display: block; }
+  #debug figcaption { text-align: center; padding: 2px; font-weight: 700; }
+  #debug .p1 { border-color: #4ade80; }
+  #debug .p2 { border-color: #facc15; }
+  #debug .attack { border-color: #f87171; }
+  #debug .none { border-color: #fff; border-style: dashed; }
+</style>
+</head>
+<body>
+
+<div id="stage">
+  <div id="world">
+    <canvas id="view"></canvas>
+    <div id="warn">!</div>
+  </div>
+  <div id="score">0</div>
+  <div id="hint">點擊出拳!看到驚嘆號就別點!</div>
+
+  <div id="over">
+    <h1>You die.</h1>
+    <p id="finalText"></p>
+    <p id="bestText"></p>
+    <button id="retry">Try again</button>
+  </div>
+
+  <div id="loading">載入圖片中… <b id="pct">0%</b></div>
+  <div id="missing">找不到圖片:<br><b id="missingList"></b><br><br>
+    請確認檔案在 <b>assets/frames/</b> 資料夾,<br>檔名為 f01.png ~ f36.png</div>
+</div>
+
+<div id="debug"></div>
+
+<script>
+(() => {
+  /* =====================================================
+     設定區
+     punches:右貓 5 拳,各自的影格範圍 [起, 迄](含頭尾,從 1 算)
+     attack :左貓撲過來的影格範圍
+     ===================================================== */
+  const CONFIG = {
+    total: 36,
+    dir: 'assets/frames/', prefix: 'f', pad: 2, ext: 'png',
+
+    punches: [[1, 6], [7, 12], [13, 18], [19, 24], [25, 30]],
+    attack:  [31, 36],
+    fps: { punch: 24, attack: 10 },   // 每秒播幾張
+
+    baseChance: 0.15,          // 每次出拳後跳出驚嘆號的基本機率
+    chancePerScore: 0.006,     // 每多 1 分增加的機率
+    maxChance: 0.5,           // 機率上限
+    safePunches: 2,            // 前幾次點擊保證安全
+    warnDelayMs: [100, 450],   // 出拳後隔多久才跳出驚嘆號(隨機範圍)
+    warnStartMs: 900,          // 驚嘆號停留時間(起始)
+    warnMinMs: 450,            // 驚嘆號停留時間(最短)
+    warnShrinkPerScore: 8,     // 每多 1 分縮短幾毫秒
+    dieHoldMs: 500             // 撲過來播完後,停多久轉黑屏
+  };
+
+  const $ = id => document.getElementById(id);
+  const stage = $('stage'), world = $('world'), canvas = $('view'), ctx = canvas.getContext('2d');
+  const scoreEl = $('score'), hintEl = $('hint'), warnEl = $('warn'), overEl = $('over');
+
+  /* ---------- 影格分組與檢查 ---------- */
+  const range = (s, e) => { const a = []; for (let i = s; i <= e; i++) a.push(i); return a; };
+  const PUNCHES = CONFIG.punches.map(([s, e]) => range(s, e));
+  const ATTACK = range(CONFIG.attack[0], CONFIG.attack[1]);
+
+  const owner = {}, dup = [], unused = [];
+  PUNCHES.forEach((list, i) => list.forEach(n => { if (owner[n]) dup.push(n); owner[n] = 'punch' + (i + 1); }));
+  ATTACK.forEach(n => { if (owner[n]) dup.push(n); owner[n] = 'attack'; });
+  for (let n = 1; n <= CONFIG.total; n++) if (!owner[n]) unused.push(n);
+  if (unused.length) console.warn('這些影格沒有被使用:', unused.join(', '));
+  if (dup.length)    console.warn('這些影格被重複分到多組:', dup.join(', '));
+
+  const frameUrl = n => CONFIG.dir + CONFIG.prefix + String(n).padStart(CONFIG.pad, '0') + '.' + CONFIG.ext;
+
+  /* ---------- 預載 ---------- */
+  const imgs = new Array(CONFIG.total);
+  const missing = [];
+  let loaded = 0;
+
+  function preload() {
+    return new Promise(resolve => {
+      for (let n = 1; n <= CONFIG.total; n++) {
+        const im = new Image();
+        im.onload = im.onerror = ev => {
+          if (ev.type === 'error') missing.push(frameUrl(n));
+          loaded++;
+          $('pct').textContent = Math.round(loaded / CONFIG.total * 100) + '%';
+          if (loaded === CONFIG.total) resolve();
+        };
+        im.src = frameUrl(n);
+        imgs[n - 1] = im;
+      }
+    });
+  }
+
+  function draw(n) {
+    const im = imgs[n - 1];
+    if (im && im.naturalWidth) ctx.drawImage(im, 0, 0, canvas.width, canvas.height);
+  }
+
+  /* ---------- 影格播放器(播完停在最後一張) ---------- */
+  let player = null;
+  function stopPlayer() { if (player) player.stop = true; player = null; }
+  function play(list, fps, onDone) {
+    stopPlayer();
+    const p = { stop: false };
+    player = p;
+    const t0 = performance.now();
+    let last = -1;
+    (function tick(now) {
+      if (p.stop) return;
+      const idx = Math.floor((now - t0) / 1000 * fps);
+      if (idx >= list.length) {
+        draw(list[list.length - 1]);
+        p.stop = true;
+        if (onDone) onDone();
+        return;
+      }
+      if (idx !== last) { draw(list[idx]); last = idx; }
+      requestAnimationFrame(tick);
+    })(t0);
+  }
+  const showRest = () => { stopPlayer(); draw(1); };   // 待機:停在 01 號
+
+  /* ---------- 音效(WebAudio,不需外部檔案) ---------- */
+  let ac = null;
+  function ensureAudio() {
+    if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (_) {} }
+    if (ac && ac.state === 'suspended') ac.resume();
+  }
+  function tone(freq, dur, type = 'sine', vol = .25, slideTo = null, delay = 0) {
+    if (!ac) return;
+    const t = ac.currentTime + delay;
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = type; o.frequency.setValueAtTime(freq, t);
+    if (slideTo) o.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(.001, t + dur);
+    o.connect(g).connect(ac.destination);
+    o.start(t); o.stop(t + dur + .02);
+  }
+  const sfx = {
+    punch: () => { tone(220, .1, 'square', .15, 70); tone(90, .08, 'sine', .28, 50); },
+    warn:  () => { tone(880, .1, 'sawtooth', .13); tone(880, .1, 'sawtooth', .13, null, .14); },
+    die:   () => { tone(180, .5, 'sawtooth', .3, 40); tone(90, .6, 'square', .2, 30); }
+  };
+
+  /* ---------- 遊戲邏輯 ---------- */
+  let state = 'idle';               // idle | warn | dying | dead
+  let score = 0, punchNo = 0;
+  let warnTimer = null, warnDelayTimer = null, dieTimer = null;
+  let best = +(localStorage.getItem('catpunch_best') || 0);
+
+  const setScore = n => { score = n; scoreEl.textContent = n; };
+
+  function shake(amp, dur) {
+    const f = [];
+    for (let i = 0; i < 8; i++) {
+      const k = 1 - i / 8;
+      f.push({ transform: `translate(${(Math.random() - .5) * 2 * amp * k}px, ${(Math.random() - .5) * 2 * amp * k}px)` });
+    }
+    f.push({ transform: 'translate(0,0)' });
+    world.animate(f, { duration: dur });
+  }
+
+  function punch() {
+    setScore(score + 1);
+    sfx.punch();
+    shake(3, 120);
+
+    const seg = PUNCHES[punchNo % PUNCHES.length];   // 依序輪流播第 1~5 拳
+    punchNo++;
+    play(seg, CONFIG.fps.punch);
+
+    clearTimeout(warnDelayTimer);                    // 玩家又點了,取消還沒出現的驚嘆號
+    const chance = Math.min(CONFIG.baseChance + score * CONFIG.chancePerScore, CONFIG.maxChance);
+    if (score > CONFIG.safePunches && Math.random() < chance) {
+      const [a, b] = CONFIG.warnDelayMs;
+      const delay = a + Math.random() * (b - a);
+      warnDelayTimer = setTimeout(() => { if (state === 'idle') startWarn(); }, delay);
+    }
+  }
+
+  function startWarn() {
+    state = 'warn';
+    warnEl.classList.remove('on'); void warnEl.offsetWidth;
+    warnEl.classList.add('on');
+    sfx.warn();
+    const ms = Math.max(CONFIG.warnMinMs, CONFIG.warnStartMs - score * CONFIG.warnShrinkPerScore);
+    clearTimeout(warnTimer);
+    warnTimer = setTimeout(() => {            // 忍住沒點 → 驚嘆號消失,繼續玩
+      if (state === 'warn') { state = 'idle'; warnEl.classList.remove('on'); }
+    }, ms);
+  }
+
+  function die() {
+    state = 'dying';
+    clearTimeout(warnTimer); clearTimeout(warnDelayTimer);
+    warnEl.classList.remove('on');
+    sfx.die();
+    shake(14, 450);
+    play(ATTACK, CONFIG.fps.attack, () => {
+      dieTimer = setTimeout(() => {
+        if (score > best) { best = score; localStorage.setItem('catpunch_best', best); }
+        $('finalText').textContent = 'Punches: ' + score;
+        $('bestText').textContent  = 'Best: ' + best;
+        overEl.classList.add('on');
+        state = 'dead';
+      }, CONFIG.dieHoldMs);
+    });
+  }
+
+  function restart() {
+    clearTimeout(warnTimer); clearTimeout(warnDelayTimer); clearTimeout(dieTimer);
+    overEl.classList.remove('on');
+    warnEl.classList.remove('on');
+    setScore(0);
+    punchNo = 0;
+    state = 'idle';
+    showRest();
+  }
+
+  function onTap() {
+    if (state === 'dying' || state === 'dead') return;
+    ensureAudio();
+    hintEl.style.opacity = 0;
+    if (state === 'warn') { die(); return; }   // 驚嘆號期間再點 = 被撲
+    punch();
+  }
+
+  stage.addEventListener('pointerdown', e => { e.preventDefault(); onTap(); });
+  window.addEventListener('keydown', e => {
+    if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) onTap(); }
+  });
+  overEl.addEventListener('pointerdown', e => e.stopPropagation());
+  $('retry').addEventListener('click', restart);
+
+  /* ---------- 除錯模式:網址加 ?debug ---------- */
+  function buildDebug() {
+    const d = $('debug');
+    d.style.display = 'block';
+    let html = '<b>除錯模式</b>:綠/黃交替=第 1~5 拳、紅=撲過來、白虛線=未使用。' +
+               '改 CONFIG 後重新整理。<br>' +
+               '未使用:' + (unused.join(', ') || '無') + ' ｜ 重複:' + (dup.join(', ') || '無') +
+               ' ｜ <a style="color:#7dd3fc" href="' + location.pathname + '">回到遊戲</a><div class="grid">';
+    for (let n = 1; n <= CONFIG.total; n++) {
+      const o = owner[n];
+      let cls = 'none';
+      if (o === 'attack') cls = 'attack';
+      else if (o) cls = (+o.replace('punch', '') % 2) ? 'p1' : 'p2';
+      html += '<figure class="' + cls + '"><img src="' + frameUrl(n) + '">' +
+              '<figcaption>' + n + (o ? ' · ' + o : '') + '</figcaption></figure>';
+    }
+    d.innerHTML = html + '</div>';
+  }
+
+  /* ---------- 啟動 ---------- */
+  preload().then(() => {
+    if (new URLSearchParams(location.search).has('debug')) { $('loading').style.display = 'none'; buildDebug(); return; }
+    if (missing.length) {
+      $('loading').style.display = 'none';
+      $('missingList').innerHTML = missing.slice(0, 8).join('<br>') + (missing.length > 8 ? '<br>…共 ' + missing.length + ' 張' : '');
+      $('missing').style.display = 'flex';
+      return;
+    }
+    const first = imgs[0];
+    canvas.width = first.naturalWidth; canvas.height = first.naturalHeight;
+    stage.style.setProperty('--ratio', first.naturalWidth + ' / ' + first.naturalHeight);
+    $('loading').style.display = 'none';
+    showRest();
+  });
+})();
+</script>
+</body>
+</html>
