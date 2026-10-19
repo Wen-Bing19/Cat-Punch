@@ -1,28 +1,28 @@
 # 🐾 Cat-Punch (貓打貓)
 
-一個趣味的小品網頁遊戲！
+A fun, lighthearted web game! 
 
 ---
 
-## 🎮 遊戲介紹
+## 🎮 Introduce (遊戲介紹)
 Just cat punch!
 
 ---
 
-🔗 **線上直接遊玩**：[點擊這裡立刻開始遊戲](https://wen-bing19.github.io/Cat-Punch/) *(請將網址換成你的 GitHub Pages 網址)*
+🔗 **Play directly online (線上直接遊玩)**：[Click here to start the game now](https://wen-bing19.github.io/Cat-Punch/) 
 
 ---
 
-## 📥 如何下載到本機遊玩 (Offline Version)
+## 📥 How to download and play locally (如何下載到本機遊玩)
 
-如果你想要下載到電腦裡離線遊玩：
+If you would like to download the project to your computer for offline play:
 
-1. 點擊本頁面右上角的綠色按鈕 **`<> Code`**。
-2. 選擇 **`Download ZIP`** 將專案壓縮檔下載到電腦並解壓縮。
-3. 確保解壓縮出來的資料夾內同時包含：
+1. Click the green **`<> Code`** button in the top-right corner of this page.
+2. Select **`Download ZIP`** to save the project archive to your computer, then extract the files.
+3. Ensure that the extracted folder contains both of the following:
    * `index.html`
-   * `assets/` (資源資料夾)
-4. 直接雙擊滑鼠打開 **`index.html`** 即可在瀏覽器中開始遊戲！
+   * `assets/` (the resources folder)
+4. Simply double-click **`index.html`** to open it in your web browser and start playing!
 
 ---
 
